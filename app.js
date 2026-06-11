@@ -17,7 +17,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAegleek_r7ra4JH7pEiNpOAZZO_0uhRXs",
+  apiKey: "AIzaSyAegleek_r7ra4JH7pEiNpOA2ZO_0uhRXs",
   authDomain: "casualdayapp-11d20.firebaseapp.com",
   projectId: "casualdayapp-11d20",
   storageBucket: "casualdayapp-11d20.firebasestorage.app",
