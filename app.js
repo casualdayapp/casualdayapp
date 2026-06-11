@@ -243,7 +243,7 @@ function showFirebaseSignIn() {
   }
 
   if (firebaseGateMessage) {
-    firebaseGateMessage.textContent = "Usá el usuario que creaste en Firebase Authentication.";
+    firebaseGateMessage.textContent = "";
   }
 
   if (firebaseAuthError) {
@@ -265,9 +265,9 @@ function cloneRecords(records) {
 
 function getSeedState() {
   return {
-    products: cloneRecords(window.CASUALDAY_STOCK_PRODUCTS),
-    transactions: cloneRecords(window.CASUALDAY_STOCK_TRANSACTIONS),
-    priceLists: cloneRecords(window.CASUALDAY_PRICE_LISTS)
+    products: [],
+    transactions: [],
+    priceLists: cloneRecords(DEFAULT_PRICE_LISTS)
   };
 }
 
@@ -1702,6 +1702,14 @@ async function initializeInventory() {
 
 function getAuthErrorMessage(error) {
   switch (error?.code) {
+    case "auth/unauthorized-domain":
+      return "Este dominio no está autorizado en Firebase. Agregá casualdayapp.github.io en Authentication > Configuración > Dominios autorizados.";
+    case "auth/operation-not-allowed":
+      return "El acceso con email y contraseña no está habilitado en Firebase Authentication.";
+    case "auth/invalid-email":
+      return "El email ingresado no tiene un formato válido.";
+    case "auth/user-disabled":
+      return "Este usuario está deshabilitado en Firebase Authentication.";
     case "auth/invalid-credential":
     case "auth/user-not-found":
     case "auth/wrong-password":
@@ -1711,7 +1719,7 @@ function getAuthErrorMessage(error) {
     case "auth/network-request-failed":
       return "No se pudo conectar con Firebase. Revisá la conexión a internet.";
     default:
-      return "No se pudo iniciar sesión. Revisá el usuario de Firebase Authentication.";
+      return `No se pudo iniciar sesión${error?.code ? ` (${error.code})` : ""}.`;
   }
 }
 

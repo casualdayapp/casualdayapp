@@ -67,6 +67,13 @@
       padding: 24px;
     }
 
+    .firebase-gate-logo {
+      display: block;
+      width: min(280px, 86%);
+      height: auto;
+      margin: 0 auto 22px;
+    }
+
     .firebase-gate-card h1 {
       margin: 0;
       color: var(--text);
@@ -80,6 +87,10 @@
       font-size: 0.95rem;
       font-weight: 650;
       line-height: 1.45;
+    }
+
+    .firebase-gate-card p:empty {
+      display: none;
     }
 
     .firebase-auth-form {
@@ -1237,6 +1248,7 @@
 <body class="firebase-checking">
   <div id="firebase-gate" class="firebase-gate" role="status" aria-live="polite">
     <section class="firebase-gate-card" aria-labelledby="firebase-gate-title">
+      <img class="firebase-gate-logo" src="assets/casualday-logo-removebg.png" alt="Casual Day">
       <h1 id="firebase-gate-title">Conectando con Firebase</h1>
       <p id="firebase-gate-message">Verificando sesión...</p>
       <form id="firebase-auth-form" class="firebase-auth-form" hidden>
@@ -1547,9 +1559,6 @@
     </section>
   </div>
 
-  <script src="data/products.js"></script>
-  <script src="data/transactions.js"></script>
-  <script src="data/price-lists.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>
