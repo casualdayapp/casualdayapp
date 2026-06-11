@@ -11,6 +11,7 @@ import {
   doc,
   getDoc,
   getFirestore,
+  onSnapshot,
   runTransaction,
   serverTimestamp,
   setDoc
@@ -80,10 +81,19 @@ let saleCart = [];
 let selectedSaleProductIndex = null;
 let selectedSalePriceListId = "default-minorista";
 let editingPriceListId = null;
+let editingProductIndex = null;
+let editingProductBaseRevision = 0;
 let isLoading = false;
 let isPriceListSaving = false;
+let isEditProductSaving = false;
+let isEditProductDirty = false;
+let isEditProductBlockedByRemoteUpdate = false;
 let isAddProductSaving = false;
 let isSaleSignSaving = false;
+let isTransactionDeleteSaving = false;
+let pendingTransactionDeleteIndex = null;
+let lastTransactionDeleteButton = null;
+let unsubscribeInventoryState = null;
 const activeFilters = new Map();
 
 const firebaseGate = document.querySelector("#firebase-gate");
@@ -100,6 +110,17 @@ const productCount = document.querySelector("#product-count");
 const searchInput = document.querySelector("#product-search");
 const filterOptions = document.querySelector("#filter-options");
 const activeFiltersContainer = document.querySelector("#active-filters");
+const editProductsOpenButton = document.querySelector("#edit-products-open");
+const editProductsCloseButton = document.querySelector("#edit-products-close");
+const editProductsCancelButton = document.querySelector("#edit-products-cancel");
+const editProductsModal = document.querySelector("#edit-products-modal");
+const editProductsSearchInput = document.querySelector("#edit-products-search");
+const editProductsItems = document.querySelector("#edit-products-items");
+const editProductsForm = document.querySelector("#edit-products-form");
+const editProductsError = document.querySelector("#edit-products-error");
+const editProductsSubmitButton = editProductsForm.querySelector("button[type='submit']");
+const editProductsRetailPriceInput = document.querySelector("#edit-precio");
+const editProductsWholesalePriceInput = document.querySelector("#edit-precio-mayorista");
 const priceListOpenButton = document.querySelector("#price-list-open");
 const priceListCloseButton = document.querySelector("#price-list-close");
 const priceListModal = document.querySelector("#price-list-modal");
@@ -117,6 +138,11 @@ const historyOpenButton = document.querySelector("#history-open");
 const historyCloseButton = document.querySelector("#history-close");
 const historyModal = document.querySelector("#history-modal");
 const transactionList = document.querySelector("#transaction-list");
+const transactionDeleteModal = document.querySelector("#transaction-delete-modal");
+const transactionDeleteCloseButton = document.querySelector("#transaction-delete-close");
+const transactionDeleteCancelButton = document.querySelector("#transaction-delete-cancel");
+const transactionDeleteConfirmButton = document.querySelector("#transaction-delete-confirm");
+const transactionDeleteError = document.querySelector("#transaction-delete-error");
 const addProductOpenButton = document.querySelector("#add-product-open");
 const addProductCloseButton = document.querySelector("#add-product-close");
 const addProductCancelButton = document.querySelector("#add-product-cancel");
@@ -590,7 +616,7 @@ function getSaleUnitPrice(product, priceList) {
   return Math.max(retailPrice * (1 - percent / 100), 0);
 }
 
-async function persistState(nextProducts, nextTransactions, nextPriceLists = priceLists) {
+async function persistState(nextProducts, nextTransactions, nextPriceLists = priceLists, expectedRevision = stateRevision) {
   const nextState = {
     products: nextProducts.map(serializeProduct),
     transactions: nextTransactions.map(serializeTransaction),
@@ -602,7 +628,7 @@ async function persistState(nextProducts, nextTransactions, nextPriceLists = pri
       const snapshot = await transaction.get(inventoryStateRef);
       const storedRevision = snapshot.exists() ? getStateRevision(snapshot.data().revision) : 0;
 
-      if (storedRevision !== stateRevision) {
+      if (storedRevision !== expectedRevision) {
         throw new Error("El inventario cambió en otro dispositivo. Recargá la página para ver la última versión antes de guardar de nuevo.");
       }
 
@@ -624,6 +650,60 @@ async function persistState(nextProducts, nextTransactions, nextPriceLists = pri
 
     throw new Error("No se pudo guardar en Firebase. Revisá que hayas iniciado sesión y que las reglas de Firestore permitan tu email.");
   }
+}
+
+function syncSaleStateWithProducts() {
+  if (selectedSaleProductIndex !== null && !allProducts[selectedSaleProductIndex]) {
+    selectedSaleProductIndex = null;
+  }
+
+  saleCart = saleCart.filter((item) => allProducts[item.productIndex]);
+}
+
+function applyInventoryState(state, { syncEditProducts = true } = {}) {
+  stateRevision = getStateRevision(state.revision);
+  priceLists = ensureDefaultPriceLists(state.priceLists);
+  allProducts = state.products.map(normalizeProduct);
+  transactionHistory = state.transactions.map(normalizeTransaction);
+  syncSaleStateWithProducts();
+  refreshInventoryView();
+  renderTransactionHistory();
+  renderPriceLists();
+  refreshSaleBuilder();
+
+  if (syncEditProducts) {
+    syncEditProductsModalWithState();
+  }
+}
+
+function subscribeToInventoryState() {
+  if (unsubscribeInventoryState) {
+    unsubscribeInventoryState();
+  }
+
+  unsubscribeInventoryState = onSnapshot(
+    inventoryStateRef,
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        return;
+      }
+
+      const previousRevision = stateRevision;
+      const nextState = normalizeStateRecord(snapshot.data());
+
+      if (nextState.revision < previousRevision) {
+        return;
+      }
+
+      applyInventoryState(nextState, { syncEditProducts: false });
+      syncEditProductsModalWithState({
+        remoteRevisionChanged: nextState.revision !== previousRevision
+      });
+    },
+    () => {
+      blockAppLoad("Se perdió la conexión con Firebase. Revisá la conexión y recargá la página.");
+    }
+  );
 }
 
 function showLoadingState() {
@@ -718,7 +798,7 @@ function createEmptyState(message) {
   return state;
 }
 
-function createTransactionRow(transaction) {
+function createTransactionRow(transaction, index) {
   const row = document.createElement("article");
   row.className = "transaction-row";
 
@@ -732,7 +812,8 @@ function createTransactionRow(transaction) {
     createTransactionCell(`${transaction.cantidad} u.`),
     createTransactionCell(getTransactionStockLabel(transaction)),
     createTransactionSignatureCell(transaction),
-    createTransactionCell(transaction.detalle)
+    createTransactionCell(transaction.detalle),
+    createTransactionActionCell(index)
   );
 
   return row;
@@ -753,6 +834,21 @@ function createTransactionTypeCell(tipo) {
   pill.className = `transaction-type ${tipo}`;
   pill.textContent = tipo === "salida" ? "Salida" : "Entrada";
   cell.append(pill);
+
+  return cell;
+}
+
+function createTransactionActionCell(index) {
+  const cell = document.createElement("div");
+  const button = document.createElement("button");
+
+  cell.className = "transaction-cell transaction-actions";
+  button.className = "transaction-delete-button";
+  button.type = "button";
+  button.dataset.transactionIndex = String(index);
+  button.setAttribute("aria-label", "Borrar este registro");
+  button.textContent = "X";
+  cell.append(button);
 
   return cell;
 }
@@ -885,7 +981,7 @@ function renderTransactionHistory() {
     return;
   }
 
-  transactionList.replaceChildren(...transactionHistory.map(createTransactionRow));
+  transactionList.replaceChildren(...transactionHistory.map((transaction, index) => createTransactionRow(transaction, index)));
 }
 
 function refreshInventoryView() {
@@ -903,6 +999,351 @@ function openHistoryModal() {
 function closeHistoryModal() {
   historyModal.hidden = true;
   historyOpenButton.focus();
+}
+
+function getEditProductSearchText(product) {
+  return [
+    product.marca,
+    product.codigo,
+    product.prenda,
+    product.talle,
+    product.color,
+    String(product.stock),
+    product.costo,
+    getComputedRetailPriceLabel(product),
+    getComputedWholesalePriceLabel(product),
+    product.estanteria,
+    product.lugar
+  ].join(" ").toLowerCase();
+}
+
+function getEditProductMatches() {
+  const searchTerm = editProductsSearchInput.value.trim().toLowerCase();
+
+  return allProducts
+    .map((product, index) => ({ product, index }))
+    .filter(({ product }) => !searchTerm || getEditProductSearchText(product).includes(searchTerm));
+}
+
+function createEditProductListRow(product, productIndex) {
+  const button = document.createElement("button");
+  const title = document.createElement("strong");
+  const meta = document.createElement("span");
+  const price = document.createElement("small");
+
+  button.className = `edit-product-select${editingProductIndex === productIndex ? " selected" : ""}`;
+  button.type = "button";
+  button.dataset.productIndex = String(productIndex);
+  title.textContent = `${product.codigo} - ${product.prenda}`;
+  meta.textContent = `${product.marca} | Talle ${product.talle} | ${product.color} | ${product.stock} u.`;
+  price.textContent = `Costo ${product.costo} | Min. ${getComputedRetailPriceLabel(product)} | May. ${getComputedWholesalePriceLabel(product)}`;
+  button.append(title, meta, price);
+
+  return button;
+}
+
+function renderEditProductsList() {
+  if (!allProducts.length) {
+    editProductsItems.replaceChildren(createEmptyState("No hay productos cargados aún"));
+    return;
+  }
+
+  const matches = getEditProductMatches();
+
+  if (!matches.length) {
+    editProductsItems.replaceChildren(createEmptyState("No hay productos para esa busqueda"));
+    return;
+  }
+
+  editProductsItems.replaceChildren(
+    ...matches.map(({ product, index }) => createEditProductListRow(product, index))
+  );
+}
+
+function setEditProductFormDisabled(disabled) {
+  PRODUCT_INPUT_FIELDS.forEach((field) => {
+    const input = editProductsForm.elements[field.key];
+
+    if (input) {
+      input.disabled = disabled;
+    }
+  });
+
+  editProductsRetailPriceInput.disabled = disabled;
+  editProductsWholesalePriceInput.disabled = disabled;
+  setButtonDisabled(editProductsSubmitButton, disabled || isEditProductBlockedByRemoteUpdate);
+}
+
+function updateEditProductComputedPrices() {
+  const selectedProduct = editingProductIndex !== null ? allProducts[editingProductIndex] : null;
+  const rawCost = String(editProductsForm.elements.costo.value || "").trim();
+  const previewProduct = selectedProduct
+    ? normalizeProduct({ ...selectedProduct, costo: rawCost }, editingProductIndex)
+    : null;
+
+  if (!previewProduct || parseProductCostAmount(rawCost) === null) {
+    editProductsRetailPriceInput.value = "-";
+    editProductsWholesalePriceInput.value = "-";
+    return;
+  }
+
+  editProductsRetailPriceInput.value = getComputedRetailPriceLabel(previewProduct);
+  editProductsWholesalePriceInput.value = getComputedWholesalePriceLabel(previewProduct);
+}
+
+function clearEditProductForm() {
+  editingProductIndex = null;
+  editingProductBaseRevision = stateRevision;
+  isEditProductDirty = false;
+  isEditProductBlockedByRemoteUpdate = false;
+  editProductsForm.reset();
+  editProductsRetailPriceInput.value = "";
+  editProductsWholesalePriceInput.value = "";
+  editProductsError.textContent = "";
+  setEditProductFormDisabled(true);
+}
+
+function fillEditProductForm(product, productIndex) {
+  editingProductIndex = productIndex;
+  editingProductBaseRevision = stateRevision;
+  isEditProductDirty = false;
+  isEditProductBlockedByRemoteUpdate = false;
+
+  PRODUCT_INPUT_FIELDS.forEach((field) => {
+    const input = editProductsForm.elements[field.key];
+
+    if (input) {
+      input.value = String(product[field.key] ?? "");
+    }
+  });
+
+  editProductsError.textContent = "";
+  updateEditProductComputedPrices();
+  setEditProductFormDisabled(false);
+}
+
+function selectEditProduct(productIndex) {
+  const product = allProducts[productIndex];
+
+  if (!product) {
+    clearEditProductForm();
+    renderEditProductsList();
+    return;
+  }
+
+  fillEditProductForm(product, productIndex);
+  renderEditProductsList();
+  editProductsForm.elements.marca.focus();
+}
+
+function syncEditProductsModalWithState({ remoteRevisionChanged = false } = {}) {
+  if (editProductsModal.hidden) {
+    return;
+  }
+
+  const hasSelectedProduct = editingProductIndex !== null && Boolean(allProducts[editingProductIndex]);
+
+  renderEditProductsList();
+
+  if (!allProducts.length) {
+    clearEditProductForm();
+    return;
+  }
+
+  if (!hasSelectedProduct) {
+    selectEditProduct(getEditProductMatches()[0]?.index ?? 0);
+    return;
+  }
+
+  if (remoteRevisionChanged && isEditProductDirty && !isEditProductSaving) {
+    isEditProductBlockedByRemoteUpdate = true;
+    editProductsError.textContent = "El inventario cambió en Firebase. Volvé a seleccionar el producto antes de guardar.";
+    setButtonDisabled(editProductsSubmitButton, true);
+    return;
+  }
+
+  if (!isEditProductDirty || isEditProductSaving) {
+    fillEditProductForm(allProducts[editingProductIndex], editingProductIndex);
+    renderEditProductsList();
+  } else {
+    updateEditProductComputedPrices();
+  }
+}
+
+function openEditProductsModal() {
+  editProductsError.textContent = "";
+  editProductsSearchInput.value = "";
+  editProductsModal.hidden = false;
+  renderEditProductsList();
+
+  const firstMatch = getEditProductMatches()[0];
+
+  if (firstMatch) {
+    fillEditProductForm(firstMatch.product, firstMatch.index);
+  } else {
+    clearEditProductForm();
+  }
+
+  editProductsSearchInput.focus();
+}
+
+function closeEditProductsModal() {
+  if (isEditProductSaving) {
+    return;
+  }
+
+  editProductsModal.hidden = true;
+  editProductsSearchInput.value = "";
+  clearEditProductForm();
+  editProductsOpenButton.focus();
+}
+
+function getEditedProductFromForm() {
+  if (editingProductIndex === null || !allProducts[editingProductIndex]) {
+    editProductsError.textContent = "Seleccioná un producto para editar.";
+    return null;
+  }
+
+  if (isEditProductBlockedByRemoteUpdate) {
+    editProductsError.textContent = "El inventario cambió en Firebase. Volvé a seleccionar el producto antes de guardar.";
+    return null;
+  }
+
+  const formData = new FormData(editProductsForm);
+  const values = Object.fromEntries(
+    PRODUCT_INPUT_FIELDS.map((field) => [field.key, String(formData.get(field.key) || "").trim()])
+  );
+  const missingFields = getRequiredFieldLabels(values);
+  const stock = parseStockValue(values.stock);
+  const costAmount = parseProductCostAmount(values.costo);
+
+  if (missingFields.length) {
+    editProductsError.textContent = `Completá todos los campos: ${missingFields.join(", ")}.`;
+    return null;
+  }
+
+  if (stock === null) {
+    editProductsError.textContent = "Stock debe ser un numero entero igual o mayor a 0.";
+    return null;
+  }
+
+  if (costAmount === null) {
+    editProductsError.textContent = "Costo debe ser un importe valido mayor a 0. Ej: $18.900.";
+    return null;
+  }
+
+  editProductsError.textContent = "";
+
+  return normalizeProduct({ ...values, stock }, editingProductIndex);
+}
+
+async function handleEditProductSubmit(event) {
+  event.preventDefault();
+
+  if (isEditProductSaving) {
+    return;
+  }
+
+  const product = getEditedProductFromForm();
+
+  if (!product) {
+    return;
+  }
+
+  const productIndex = editingProductIndex;
+  const nextProducts = allProducts.map((currentProduct, index) => {
+    return index === productIndex ? product : normalizeProduct(currentProduct, index);
+  });
+
+  isEditProductSaving = true;
+  setButtonDisabled(editProductsSubmitButton, true);
+  setButtonDisabled(editProductsCloseButton, true);
+  setButtonDisabled(editProductsCancelButton, true);
+
+  try {
+    await persistState(nextProducts, transactionHistory, priceLists, editingProductBaseRevision);
+  } catch (error) {
+    editProductsError.textContent = error.message;
+    return;
+  } finally {
+    isEditProductSaving = false;
+    setButtonDisabled(editProductsSubmitButton, isEditProductBlockedByRemoteUpdate);
+    setButtonDisabled(editProductsCloseButton, false);
+    setButtonDisabled(editProductsCancelButton, false);
+  }
+
+  allProducts = nextProducts;
+  editingProductBaseRevision = stateRevision;
+  isEditProductDirty = false;
+  isEditProductBlockedByRemoteUpdate = false;
+  refreshInventoryView();
+  refreshSaleBuilder();
+  fillEditProductForm(allProducts[productIndex], productIndex);
+  renderEditProductsList();
+}
+
+function openTransactionDeleteModal(index, triggerButton) {
+  if (!transactionHistory[index] || isTransactionDeleteSaving) {
+    return;
+  }
+
+  pendingTransactionDeleteIndex = index;
+  lastTransactionDeleteButton = triggerButton;
+  transactionDeleteError.textContent = "";
+  transactionDeleteModal.hidden = false;
+  transactionDeleteConfirmButton.focus();
+}
+
+function closeTransactionDeleteModal({ restoreFocus = true } = {}) {
+  if (isTransactionDeleteSaving) {
+    return;
+  }
+
+  transactionDeleteModal.hidden = true;
+  transactionDeleteError.textContent = "";
+  pendingTransactionDeleteIndex = null;
+
+  if (restoreFocus && lastTransactionDeleteButton && document.contains(lastTransactionDeleteButton)) {
+    lastTransactionDeleteButton.focus();
+  }
+
+  lastTransactionDeleteButton = null;
+}
+
+async function handleTransactionDeleteConfirm() {
+  if (isTransactionDeleteSaving || pendingTransactionDeleteIndex === null) {
+    return;
+  }
+
+  if (!transactionHistory[pendingTransactionDeleteIndex]) {
+    closeTransactionDeleteModal({ restoreFocus: false });
+    renderTransactionHistory();
+    return;
+  }
+
+  const nextTransactions = transactionHistory.filter((_, index) => index !== pendingTransactionDeleteIndex);
+
+  isTransactionDeleteSaving = true;
+  setButtonDisabled(transactionDeleteCloseButton, true);
+  setButtonDisabled(transactionDeleteCancelButton, true);
+  setButtonDisabled(transactionDeleteConfirmButton, true);
+
+  try {
+    await persistState(allProducts, nextTransactions);
+  } catch (error) {
+    transactionDeleteError.textContent = error.message;
+    return;
+  } finally {
+    isTransactionDeleteSaving = false;
+    setButtonDisabled(transactionDeleteCloseButton, false);
+    setButtonDisabled(transactionDeleteCancelButton, false);
+    setButtonDisabled(transactionDeleteConfirmButton, false);
+  }
+
+  transactionHistory = nextTransactions;
+  closeTransactionDeleteModal({ restoreFocus: false });
+  renderTransactionHistory();
+  historyCloseButton.focus();
 }
 
 function formatPercent(percent) {
@@ -1677,22 +2118,11 @@ async function initializeInventory() {
   showLoadingState();
 
   try {
-    const {
-      products: loadedProducts,
-      transactions: loadedTransactions,
-      priceLists: loadedPriceLists,
-      revision: loadedRevision
-    } = await loadInitialState();
+    const loadedState = await loadInitialState();
 
-    stateRevision = loadedRevision;
-    priceLists = ensureDefaultPriceLists(loadedPriceLists);
-    allProducts = loadedProducts.map(normalizeProduct);
-    transactionHistory = loadedTransactions.map(normalizeTransaction);
+    applyInventoryState(loadedState);
+    subscribeToInventoryState();
     isLoading = false;
-    refreshInventoryView();
-    renderTransactionHistory();
-    renderPriceLists();
-    renderSalePriceListOptions();
     allowAppLoad();
   } catch (error) {
     isLoading = false;
@@ -1763,6 +2193,11 @@ async function startFirebaseSession() {
     firebaseAuth,
     async (user) => {
       if (!user) {
+        if (unsubscribeInventoryState) {
+          unsubscribeInventoryState();
+          unsubscribeInventoryState = null;
+        }
+
         if (currentUserLabel) {
           currentUserLabel.textContent = "";
         }
@@ -1827,6 +2262,30 @@ activeFiltersContainer.addEventListener("click", (event) => {
   renderInventory(getVisibleProducts());
 });
 
+editProductsOpenButton.addEventListener("click", openEditProductsModal);
+editProductsCloseButton.addEventListener("click", closeEditProductsModal);
+editProductsCancelButton.addEventListener("click", closeEditProductsModal);
+editProductsSearchInput.addEventListener("input", renderEditProductsList);
+editProductsItems.addEventListener("click", (event) => {
+  const productButton = event.target.closest(".edit-product-select");
+
+  if (!productButton) {
+    return;
+  }
+
+  selectEditProduct(Number(productButton.dataset.productIndex));
+});
+editProductsForm.addEventListener("input", (event) => {
+  const field = event.target.closest("input[name]");
+
+  if (!field || field.readOnly) {
+    return;
+  }
+
+  isEditProductDirty = true;
+  updateEditProductComputedPrices();
+});
+editProductsForm.addEventListener("submit", handleEditProductSubmit);
 priceListOpenButton.addEventListener("click", openPriceListModal);
 priceListCloseButton.addEventListener("click", closePriceListModal);
 priceListTypeInput.addEventListener("change", updatePriceListCompanyState);
@@ -1843,6 +2302,9 @@ priceListItems.addEventListener("click", (event) => {
 });
 historyOpenButton.addEventListener("click", openHistoryModal);
 historyCloseButton.addEventListener("click", closeHistoryModal);
+transactionDeleteCloseButton.addEventListener("click", () => closeTransactionDeleteModal());
+transactionDeleteCancelButton.addEventListener("click", () => closeTransactionDeleteModal());
+transactionDeleteConfirmButton.addEventListener("click", handleTransactionDeleteConfirm);
 addProductOpenButton.addEventListener("click", openAddProductModal);
 addProductCloseButton.addEventListener("click", () => closeAddProductModal({ resetForm: true }));
 addProductCancelButton.addEventListener("click", () => closeAddProductModal({ resetForm: true }));
@@ -1867,6 +2329,16 @@ saleFinishButton.addEventListener("click", openSaleSignModal);
 saleSignForm.addEventListener("submit", handleSaleSignSubmit);
 saleSignCloseButton.addEventListener("click", () => closeSaleSignModal({ returnToSale: true }));
 saleSignCancelButton.addEventListener("click", () => closeSaleSignModal({ returnToSale: true }));
+
+transactionList.addEventListener("click", (event) => {
+  const deleteButton = event.target.closest(".transaction-delete-button");
+
+  if (!deleteButton) {
+    return;
+  }
+
+  openTransactionDeleteModal(Number(deleteButton.dataset.transactionIndex), deleteButton);
+});
 
 saleSearchResults.addEventListener("click", (event) => {
   const resultButton = event.target.closest(".sale-result-button");
@@ -1895,9 +2367,21 @@ priceListModal.addEventListener("click", (event) => {
   }
 });
 
+editProductsModal.addEventListener("click", (event) => {
+  if (event.target === editProductsModal) {
+    closeEditProductsModal();
+  }
+});
+
 historyModal.addEventListener("click", (event) => {
   if (event.target === historyModal) {
     closeHistoryModal();
+  }
+});
+
+transactionDeleteModal.addEventListener("click", (event) => {
+  if (event.target === transactionDeleteModal) {
+    closeTransactionDeleteModal();
   }
 });
 
@@ -1924,6 +2408,11 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
+  if (!transactionDeleteModal.hidden) {
+    closeTransactionDeleteModal();
+    return;
+  }
+
   if (!saleSignModal.hidden) {
     closeSaleSignModal({ returnToSale: true });
     return;
@@ -1936,6 +2425,11 @@ document.addEventListener("keydown", (event) => {
 
   if (!addProductModal.hidden) {
     closeAddProductModal({ resetForm: true });
+    return;
+  }
+
+  if (!editProductsModal.hidden) {
+    closeEditProductsModal();
     return;
   }
 

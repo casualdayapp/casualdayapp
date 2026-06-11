@@ -592,6 +592,14 @@
       width: min(100%, 860px);
     }
 
+    .product-modal.edit-products-modal {
+      width: min(100%, 1180px);
+    }
+
+    .product-modal.confirm-modal {
+      width: min(100%, 520px);
+    }
+
     .modal-header {
       display: flex;
       align-items: center;
@@ -701,6 +709,14 @@
       display: none;
     }
 
+    .confirm-copy {
+      margin: 0;
+      color: #4d5548;
+      font-size: 0.94rem;
+      font-weight: 650;
+      line-height: 1.45;
+    }
+
     .form-actions {
       display: flex;
       justify-content: flex-end;
@@ -738,6 +754,91 @@
     .form-action:disabled {
       cursor: default;
       opacity: 0.52;
+    }
+
+    .edit-products-form {
+      display: grid;
+      gap: 16px;
+    }
+
+    .edit-products-search {
+      display: block;
+    }
+
+    .edit-products-layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 0.86fr) minmax(0, 1.34fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .edit-products-list-panel,
+    .edit-products-editor {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-soft);
+    }
+
+    .edit-products-list-panel {
+      max-height: 520px;
+      overflow: auto;
+      padding: 10px;
+    }
+
+    .edit-products-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .edit-products-list .empty-state {
+      min-height: 190px;
+    }
+
+    .edit-product-select {
+      display: grid;
+      width: 100%;
+      gap: 5px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text);
+      padding: 11px 12px;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .edit-product-select.selected {
+      border-color: rgba(47, 82, 56, 0.48);
+      background: var(--accent-soft);
+      box-shadow: inset 3px 0 0 var(--accent-strong);
+    }
+
+    .edit-product-select strong {
+      overflow: hidden;
+      font-size: 0.9rem;
+      font-weight: 900;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .edit-product-select span,
+    .edit-product-select small {
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .edit-products-editor {
+      padding: 14px;
+    }
+
+    .form-field input[readonly] {
+      cursor: default;
+      color: #7d8575;
+      background: #f4f6f0;
     }
 
     .price-list-panel {
@@ -997,8 +1098,8 @@
     .history-header,
     .transaction-row {
       display: grid;
-      grid-template-columns: 1.15fr 0.75fr 0.9fr 1.55fr 0.55fr 0.9fr 0.75fr 0.85fr 1fr 1.5fr;
-      min-width: 1320px;
+      grid-template-columns: 1.15fr 0.75fr 0.9fr 1.55fr 0.55fr 0.9fr 0.75fr 0.85fr 1fr 1.5fr 0.48fr;
+      min-width: 1390px;
       gap: 12px;
       align-items: center;
       padding: 0 20px;
@@ -1050,6 +1151,26 @@
       color: var(--muted);
       font-size: 0.75rem;
       font-weight: 750;
+    }
+
+    .transaction-actions {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .transaction-delete-button {
+      display: inline-grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 1px solid #efd0c8;
+      border-radius: 8px;
+      background: var(--danger-soft);
+      color: var(--danger);
+      cursor: pointer;
+      font-size: 0.86rem;
+      font-weight: 900;
+      line-height: 1;
     }
 
     .transaction-type {
@@ -1234,6 +1355,14 @@
         grid-template-columns: 1fr;
       }
 
+      .edit-products-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .edit-products-list-panel {
+        max-height: 300px;
+      }
+
       .price-list-row {
         grid-template-columns: 1fr;
       }
@@ -1280,7 +1409,8 @@
 
       <div class="top-actions">
         <span id="current-user-label" class="session-chip"></span>
-        <button id="price-list-open" class="history-button" type="button">Lista de Precios</button>
+        <button id="edit-products-open" class="history-button" type="button">Editar productos</button>
+        <button id="price-list-open" class="history-button" type="button">Precios especiales</button>
         <button id="history-open" class="history-button" type="button">Registro</button>
         <button id="sign-out" class="history-button sign-out-button" type="button">Cerrar sesión</button>
         <div class="stock-summary" aria-label="Resumen de inventario">
@@ -1362,6 +1492,7 @@
           <span>Stock</span>
           <span>Firma</span>
           <span>Detalle</span>
+          <span>Acción</span>
         </div>
         <div id="transaction-list">
           <div class="empty-state">No hay transacciones registradas aún</div>
@@ -1370,14 +1501,119 @@
     </section>
   </div>
 
+  <div id="transaction-delete-modal" class="modal-overlay" hidden>
+    <section class="product-modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="transaction-delete-title">
+      <header class="modal-header">
+        <div class="modal-title">
+          <h2 id="transaction-delete-title">¿Borrar este registro?</h2>
+          <p>Esta acción solo quita el registro historial.</p>
+        </div>
+        <button id="transaction-delete-close" class="modal-close" type="button" aria-label="Cerrar confirmación">X</button>
+      </header>
+
+      <div class="product-form">
+        <p class="confirm-copy">No borra el producto, no cambia el stock y no deshace la transacción original.</p>
+        <div id="transaction-delete-error" class="form-error" role="alert"></div>
+        <div class="form-actions">
+          <button id="transaction-delete-cancel" class="form-action secondary" type="button">Cancelar</button>
+          <button id="transaction-delete-confirm" class="form-action danger" type="button">Borrar registro</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="edit-products-modal" class="modal-overlay" hidden>
+    <section class="product-modal edit-products-modal" role="dialog" aria-modal="true" aria-labelledby="edit-products-title">
+      <header class="modal-header">
+        <div class="modal-title">
+          <h2 id="edit-products-title">Editar productos</h2>
+          <p>Modificá los datos guardados. Minorista y mayorista se recalculan desde el costo.</p>
+        </div>
+        <button id="edit-products-close" class="modal-close" type="button" aria-label="Cerrar editar productos">X</button>
+      </header>
+
+      <form id="edit-products-form" class="product-form edit-products-form" novalidate>
+        <label class="search-field edit-products-search" for="edit-products-search">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m21 21-4.35-4.35m1.35-5.15a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <input id="edit-products-search" type="search" autocomplete="off" placeholder="Buscar producto por marca, codigo, prenda, talle, color o lugar">
+        </label>
+
+        <div class="edit-products-layout">
+          <section class="edit-products-list-panel" aria-label="Productos agregados">
+            <div id="edit-products-items" class="edit-products-list">
+              <div class="empty-state">No hay productos cargados aún</div>
+            </div>
+          </section>
+
+          <section class="edit-products-editor" aria-label="Datos del producto seleccionado">
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="edit-marca">Marca</label>
+                <input id="edit-marca" name="marca" type="text" autocomplete="off" required>
+              </div>
+              <div class="form-field">
+                <label for="edit-codigo">Código</label>
+                <input id="edit-codigo" name="codigo" type="text" autocomplete="off" required>
+              </div>
+              <div class="form-field">
+                <label for="edit-prenda">Prenda</label>
+                <input id="edit-prenda" name="prenda" type="text" autocomplete="off" required>
+              </div>
+              <div class="form-field">
+                <label for="edit-talle">Talle</label>
+                <input id="edit-talle" name="talle" type="text" autocomplete="off" required>
+              </div>
+              <div class="form-field">
+                <label for="edit-color">Color</label>
+                <input id="edit-color" name="color" type="text" autocomplete="off" required>
+              </div>
+              <div class="form-field">
+                <label for="edit-stock">Stock</label>
+                <input id="edit-stock" name="stock" type="number" min="0" step="1" inputmode="numeric" required>
+              </div>
+              <div class="form-field">
+                <label for="edit-costo">Costo</label>
+                <input id="edit-costo" name="costo" type="text" autocomplete="off" required>
+              </div>
+              <div class="form-field">
+                <label for="edit-precio">Precio Minorista</label>
+                <input id="edit-precio" type="text" readonly aria-readonly="true" tabindex="-1">
+              </div>
+              <div class="form-field">
+                <label for="edit-precio-mayorista">Precio Mayorista</label>
+                <input id="edit-precio-mayorista" type="text" readonly aria-readonly="true" tabindex="-1">
+              </div>
+              <div class="form-field">
+                <label for="edit-estanteria">Estanteria</label>
+                <input id="edit-estanteria" name="estanteria" type="text" autocomplete="off" required>
+              </div>
+              <div class="form-field">
+                <label for="edit-lugar">Lugar</label>
+                <input id="edit-lugar" name="lugar" type="text" autocomplete="off" required>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div id="edit-products-error" class="form-error" role="alert"></div>
+        <div class="form-actions">
+          <button id="edit-products-cancel" class="form-action secondary" type="button">Cancelar</button>
+          <button class="form-action primary" type="submit">Guardar cambios</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
   <div id="price-list-modal" class="modal-overlay" hidden>
     <section class="product-modal price-modal" role="dialog" aria-modal="true" aria-labelledby="price-list-title">
       <header class="modal-header">
         <div class="modal-title">
-          <h2 id="price-list-title">Lista de Precios</h2>
+          <h2 id="price-list-title">Precios especiales</h2>
           <p>Minorista usa sobreprecio sobre costo; mayorista y empresas usan descuento.</p>
         </div>
-        <button id="price-list-close" class="modal-close" type="button" aria-label="Cerrar lista de precios">X</button>
+        <button id="price-list-close" class="modal-close" type="button" aria-label="Cerrar precios especiales">X</button>
       </header>
 
       <form id="price-list-form" class="product-form" novalidate>
