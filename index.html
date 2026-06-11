@@ -154,23 +154,31 @@
     }
 
     .topbar {
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(340px, 0.95fr) minmax(560px, 1.45fr);
       align-items: center;
-      justify-content: space-between;
-      gap: 20px;
-      margin-bottom: 28px;
+      gap: clamp(26px, 5vw, 86px);
+      margin-bottom: 22px;
+      padding: 22px 26px;
+      border: 1px solid rgba(84, 116, 90, 0.14);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.68);
+      box-shadow: 0 16px 44px rgba(53, 73, 48, 0.09);
+      backdrop-filter: blur(12px);
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 14px;
+      min-width: 0;
+      gap: 20px;
     }
 
     .brand-mark {
       display: grid;
-      width: 186px;
-      height: 96px;
+      width: 162px;
+      height: 88px;
+      flex: 0 0 auto;
       place-items: center;
       border: 0;
       border-radius: 0;
@@ -188,39 +196,66 @@
 
     .brand-copy h1 {
       margin: 0;
-      font-size: 2.35rem;
+      max-width: 420px;
+      font-size: clamp(2.15rem, 2.5vw, 3rem);
       line-height: 1;
       letter-spacing: 0;
     }
 
     .brand-copy p {
-      margin: 7px 0 0;
+      margin: 9px 0 0;
       color: var(--muted);
-      font-size: 0.95rem;
+      font-size: 1rem;
+      line-height: 1.35;
+    }
+
+    .topbar-side {
+      display: grid;
+      min-width: 0;
+      justify-items: end;
+      gap: 12px;
+    }
+
+    .topbar-meta {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 10px;
     }
 
     .stock-summary {
       display: flex;
       align-items: center;
-      gap: 14px;
-      padding: 12px 16px;
+      min-height: 46px;
+      gap: 12px;
+      padding: 0 15px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.72);
-      box-shadow: 0 10px 30px rgba(53, 73, 48, 0.08);
+      background: var(--surface-soft);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
       color: var(--muted);
       white-space: nowrap;
     }
 
+    .stock-summary span {
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
     .stock-summary strong {
       color: var(--accent-strong);
-      font-size: 1.1rem;
+      font-size: 1.15rem;
     }
 
     .top-actions {
       display: flex;
+      width: 100%;
       align-items: center;
       flex-wrap: wrap;
+      justify-content: flex-end;
       gap: 10px;
     }
 
@@ -230,21 +265,24 @@
       border-radius: 8px;
       background: #ffffff;
       color: var(--accent-strong);
-      padding: 0 16px;
-      box-shadow: 0 10px 30px rgba(53, 73, 48, 0.08);
+      padding: 0 17px;
+      box-shadow: 0 10px 24px rgba(53, 73, 48, 0.08);
       cursor: pointer;
       font-size: 0.9rem;
       font-weight: 800;
+      line-height: 1.1;
+      white-space: nowrap;
     }
 
     .session-chip {
-      max-width: 240px;
+      min-height: 46px;
+      max-width: 310px;
       overflow: hidden;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.68);
+      background: var(--surface-soft);
       color: var(--muted);
-      padding: 12px 14px;
+      padding: 12px 15px;
       font-size: 0.85rem;
       font-weight: 750;
       text-overflow: ellipsis;
@@ -1207,15 +1245,35 @@
       }
     }
 
-    @media (max-width: 850px) {
+    @media (max-width: 1050px) {
       .topbar {
-        align-items: flex-start;
-        flex-direction: column;
+        grid-template-columns: 1fr;
+        align-items: stretch;
+        gap: 18px;
       }
 
+      .topbar-side {
+        justify-items: stretch;
+      }
+
+      .topbar-meta,
+      .top-actions {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 850px) {
+      .topbar {
+        padding: 18px;
+      }
+
+      .topbar-meta,
       .top-actions {
         width: 100%;
-        justify-content: flex-start;
+      }
+
+      .session-chip {
+        max-width: none;
       }
 
       .stock-summary {
@@ -1308,16 +1366,44 @@
 
       .brand {
         align-items: flex-start;
+        gap: 12px;
       }
 
       .brand-mark {
-        width: 96px;
-        height: 66px;
+        width: 94px;
+        height: 62px;
         border-radius: 0;
       }
 
       .brand-copy h1 {
         font-size: 1.55rem;
+      }
+
+      .brand-copy p {
+        font-size: 0.88rem;
+      }
+
+      .topbar-meta,
+      .top-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .session-chip {
+        grid-column: 1 / -1;
+      }
+
+      .topbar-meta .stock-summary {
+        grid-column: 1 / -1;
+      }
+
+      .history-button,
+      .stock-summary {
+        width: 100%;
+      }
+
+      .stock-summary {
+        justify-content: center;
       }
 
       .toolbar,
@@ -1407,15 +1493,20 @@
         </div>
       </div>
 
-      <div class="top-actions">
-        <span id="current-user-label" class="session-chip"></span>
-        <button id="edit-products-open" class="history-button" type="button">Editar productos</button>
-        <button id="price-list-open" class="history-button" type="button">Precios especiales</button>
-        <button id="history-open" class="history-button" type="button">Registro</button>
-        <button id="sign-out" class="history-button sign-out-button" type="button">Cerrar sesión</button>
-        <div class="stock-summary" aria-label="Resumen de inventario">
-          <span>Productos</span>
-          <strong id="product-count">0</strong>
+      <div class="topbar-side">
+        <div class="topbar-meta">
+          <span id="current-user-label" class="session-chip"></span>
+          <div class="stock-summary" aria-label="Resumen de inventario">
+            <span>Productos</span>
+            <strong id="product-count">0</strong>
+          </div>
+        </div>
+
+        <div class="top-actions">
+          <button id="edit-products-open" class="history-button" type="button">Editar productos</button>
+          <button id="price-list-open" class="history-button" type="button">Precios especiales</button>
+          <button id="history-open" class="history-button" type="button">Registro</button>
+          <button id="sign-out" class="history-button sign-out-button" type="button">Cerrar sesión</button>
         </div>
       </div>
     </header>
