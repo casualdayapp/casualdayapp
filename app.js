@@ -395,6 +395,16 @@ function getPriceListTypeLabel(type) {
   return PRICE_LIST_TYPES[type] || PRICE_LIST_TYPES.minorista;
 }
 
+function getSalePriceListDisplayName(priceList) {
+  const companyName = String(priceList?.empresa || "").trim();
+
+  if (priceList?.tipoCliente === "empresa" && companyName) {
+    return companyName;
+  }
+
+  return String(priceList?.nombre || "Lista sin nombre");
+}
+
 function normalizeComparableText(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -481,6 +491,10 @@ function parseCurrencyValue(value) {
 
 function getProductCostAmount(product) {
   return parseCurrencyValue(product.costo) ?? 0;
+}
+
+function getProductCostLabel(product) {
+  return formatCurrency(getProductCostAmount(product));
 }
 
 function parseProductCostAmount(value) {
@@ -897,7 +911,7 @@ function createProductRow(product) {
     createTextCell("talle", product.talle),
     createTextCell("color", product.color),
     createStockCell(product.stock),
-    createTextCell("costo", product.costo),
+    createTextCell("costo", getProductCostLabel(product)),
     createTextCell("precio", getComputedRetailPriceLabel(product)),
     createTextCell("precioMayorista", getComputedWholesalePriceLabel(product)),
     createTextCell("estanteria", product.estanteria),
@@ -1736,9 +1750,10 @@ function getSaleProductSearchText(product) {
 function renderSalePriceListOptions() {
   const currentValue = selectedSalePriceListId || getDefaultSalePriceListId();
   const options = priceLists.map((priceList) => {
-    const option = createOption(priceList.id, priceList.nombre);
+    const displayName = getSalePriceListDisplayName(priceList);
+    const option = createOption(priceList.id, displayName);
     const label = usesMarkupOverCost(priceList) ? "sobre costo" : "descuento";
-    option.textContent = `${priceList.nombre} (${formatPercent(priceList.porcentaje)}% ${label})`;
+    option.textContent = `${displayName} (${formatPercent(priceList.porcentaje)}% ${label})`;
     return option;
   });
 
